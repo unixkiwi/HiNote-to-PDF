@@ -37,3 +37,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+HINOTE_FORMAT_REFERENCE.md
+
+/src/main/resources/TestNote
+/src/main/resources/TestNote.hinote
