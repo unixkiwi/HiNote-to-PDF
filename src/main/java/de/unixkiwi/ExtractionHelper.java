@@ -4,17 +4,27 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class ExtractionHelper {
-    public static void unzip(String inputFile, String outputDir) throws IOException {
+
+    /**
+     * Unzips a ZIP file to a specified directory.
+     *
+     * @return The list of files which were extracted from the archive.
+     */
+    public static ArrayList<File> unzip(String inputFile, String outputDir) throws IOException {
         byte[] buffer = new byte[1024];
         ZipInputStream inputStream = new ZipInputStream(new FileInputStream(inputFile));
         ZipEntry zipEntry;
+        ArrayList<File> extractedFiles = new ArrayList<>();
+
         while ((zipEntry = inputStream.getNextEntry()) != null) {
             File newFile = new File(outputDir, zipEntry.getName());
+            extractedFiles.add(newFile);
 
             if (zipEntry.isDirectory()) {
                 if (!newFile.isDirectory() && !newFile.mkdirs()) {
@@ -37,6 +47,8 @@ public class ExtractionHelper {
 
         inputStream.closeEntry();
         inputStream.close();
+
+        return extractedFiles;
     }
 
     public static void gunzip(String inputFile, String outputFile) throws IOException {
