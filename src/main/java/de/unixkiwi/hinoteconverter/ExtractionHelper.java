@@ -1,4 +1,4 @@
-package de.unixkiwi;
+package de.unixkiwi.hinoteconverter;
 
 import java.io.File;
 import java.io.FileInputStream;
