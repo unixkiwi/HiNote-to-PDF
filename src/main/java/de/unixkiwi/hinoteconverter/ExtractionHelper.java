@@ -1,15 +1,17 @@
 package de.unixkiwi.hinoteconverter;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+
+import java.io.*;
 import java.util.ArrayList;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class ExtractionHelper {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
 
     /**
      * Unzips a ZIP file to a specified directory.
@@ -53,16 +55,20 @@ public class ExtractionHelper {
 
     public static void gunzip(String inputFile, String outputFile) throws IOException {
         byte[] buffer = new byte[1024];
-        GZIPInputStream inputStream = new GZIPInputStream(new FileInputStream(inputFile));
 
-        FileOutputStream outputStream = new FileOutputStream(outputFile);
+        try (GZIPInputStream inputStream = new GZIPInputStream(new FileInputStream(inputFile));
+             FileOutputStream outputStream = new FileOutputStream(outputFile)) {
 
-        int size;
-        while ((size = inputStream.read(buffer)) > 0) {
-            outputStream.write(buffer, 0, size);
+            int size;
+            while ((size = inputStream.read(buffer)) > 0) {
+                outputStream.write(buffer, 0, size);
+            }
         }
+    }
 
-        outputStream.close();
-        inputStream.close();
+    public static byte[] decodeJhinoteData(byte[] data) throws IOException, JacksonException {
+        try (GZIPInputStream inputStream = new GZIPInputStream(new ByteArrayInputStream(data))) {
+            return inputStream.readAllBytes();
+        }
     }
 }
