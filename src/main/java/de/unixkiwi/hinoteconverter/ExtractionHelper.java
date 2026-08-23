@@ -4,6 +4,8 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
@@ -70,5 +72,17 @@ public class ExtractionHelper {
         try (GZIPInputStream inputStream = new GZIPInputStream(new ByteArrayInputStream(data))) {
             return inputStream.readAllBytes();
         }
+    }
+
+    public static long readUint(byte[] data, int offset) {
+        return ByteBuffer.wrap(data)
+                .order(ByteOrder.BIG_ENDIAN)
+                .getInt(offset) & 0xFFFFFFFFL;
+    }
+
+    public static float readFloat(byte[] data, int offset) {
+        return ByteBuffer.wrap(data)
+                .order(ByteOrder.BIG_ENDIAN)
+                .getFloat(offset);
     }
 }
