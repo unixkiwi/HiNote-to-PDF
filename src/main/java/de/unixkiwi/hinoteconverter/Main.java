@@ -6,13 +6,10 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.zip.ZipFile;
 
 public class Main {
@@ -21,10 +18,6 @@ public class Main {
     private static final byte[] PENKIT_MAGIC = "PENKITINFENG".getBytes(StandardCharsets.UTF_8);
     private static final byte[] PENCIL_ENGINE = "PENCILENGINE".getBytes(StandardCharsets.UTF_8);
     private static final long POINT_STRIDE = 36;
-    // CONSTANTS FOR DRAWING
-    private static final Stroke.ColorValue GRID_COLOR = new Stroke.ColorValue(221, 221, 221);
-    private static final double GRID_LINE_WIDTH = 0.8;
-    private static final double DOT_RADIUS = 1.3;
 
     static void main() {
         String inputFiles = "src/main/resources/Sample.hinote";
@@ -88,366 +81,6 @@ public class Main {
 
     public static boolean isFiniteCoordinate(float value) {
         return Float.isFinite(value) && -100000 < value && value < 100000;
-    }
-
-    static boolean isHighlighter(Stroke stroke) {
-        return stroke.penType() == 5 || stroke.opacity() < 1.0;
-    }
-
-    static String fmt(double value) {
-        return BigDecimal.valueOf(value)
-                .setScale(3, RoundingMode.HALF_UP)
-                .stripTrailingZeros()
-                .toPlainString();
-    }
-
-    static double strokeWidth(Stroke stroke, double pressure) {
-        if (stroke.penType() == 5) {
-            return Math.max(0.1, stroke.baseWidth() * 0.8);
-        }
-        return Math.max(0.1, pressure * stroke.baseWidth() * 0.8);
-    }
-
-    static String colorHex(List<Integer> color) {
-        return "#" + color.stream()
-                .map(channel -> String.format("%02x", channel))
-                .collect(Collectors.joining());
-    }
-
-    static List<Point> strokeOutline(Stroke stroke) {
-        List<PointPressure> samples = new ArrayList<>();
-
-        for (int i = 0; i < stroke.points().size(); i++) {
-            samples.add(new PointPressure(
-                    stroke.points().get(i),
-                    stroke.pressures().get(i)
-            ));
-        }
-
-        int n = samples.size();
-        if (n < 2) {
-            return List.of();
-        }
-
-        List<Point> tangents = new ArrayList<>();
-
-        for (int i = 0; i < n; i++) {
-            double dx;
-            double dy;
-
-            if (i == 0) {
-                dx = samples.get(1).point().x()
-                        - samples.get(0).point().x();
-                dy = samples.get(1).point().y()
-                        - samples.get(0).point().y();
-            } else if (i == n - 1) {
-                dx = samples.get(n - 1).point().x()
-                        - samples.get(n - 2).point().x();
-                dy = samples.get(n - 1).point().y()
-                        - samples.get(n - 2).point().y();
-            } else {
-                dx = samples.get(i + 1).point().x()
-                        - samples.get(i - 1).point().x();
-                dy = samples.get(i + 1).point().y()
-                        - samples.get(i - 1).point().y();
-            }
-
-            double length = Math.hypot(dx, dy);
-
-            tangents.add(length != 0
-                    ? new Point(dx / length, dy / length)
-                    : new Point(1.0, 0.0));
-        }
-
-        List<Point> left = new ArrayList<>();
-        List<Point> right = new ArrayList<>();
-        List<Stroke.Point> centers = new ArrayList<>();
-        List<Double> radii = new ArrayList<>();
-
-        for (int i = 0; i < n; i++) {
-            Point tangent = tangents.get(i);
-
-            double nx = -tangent.y();
-            double ny = tangent.x();
-
-            double radius = strokeWidth(
-                    stroke,
-                    samples.get(i).pressure()
-            ) / 2.0;
-
-            Stroke.Point point = samples.get(i).point();
-
-            left.add(new Point(
-                    point.x() + nx * radius,
-                    point.y() + ny * radius
-            ));
-
-            right.add(new Point(
-                    point.x() - nx * radius,
-                    point.y() - ny * radius
-            ));
-
-            centers.add(point);
-            radii.add(radius);
-        }
-
-        double maxRadius = radii.stream()
-                .mapToDouble(Double::doubleValue)
-                .max()
-                .orElse(0);
-
-        double capFloor = maxRadius * 0.45;
-
-        for (int index : new int[]{0, n - 1}) {
-            if (radii.get(index) < capFloor) {
-                radii.set(index, capFloor);
-
-                Point tangent = tangents.get(index);
-                double nx = -tangent.y();
-                double ny = tangent.x();
-
-                Stroke.Point point = samples.get(index).point();
-
-                left.set(index, new Point(
-                        point.x() + nx * capFloor,
-                        point.y() + ny * capFloor
-                ));
-
-                right.set(index, new Point(
-                        point.x() - nx * capFloor,
-                        point.y() - ny * capFloor
-                ));
-            }
-        }
-
-        List<Point> outline = new ArrayList<>(left);
-
-        int steps = 24;
-
-        Stroke.Point endCenter = centers.get(n - 1);
-        Point endLeft = left.get(n - 1);
-
-        double a0 = Math.atan2(
-                endLeft.y() - endCenter.y(),
-                endLeft.x() - endCenter.x()
-        );
-
-        for (int step = 1; step <= steps; step++) {
-            double angle = a0 - Math.PI * step / steps;
-
-            outline.add(new Point(
-                    endCenter.x()
-                            + radii.get(n - 1) * Math.cos(angle),
-                    endCenter.y()
-                            + radii.get(n - 1) * Math.sin(angle)
-            ));
-        }
-
-        List<Point> reversedRight = new ArrayList<>(right);
-        Collections.reverse(reversedRight);
-        outline.addAll(reversedRight);
-
-        Stroke.Point startCenter = centers.getFirst();
-        Point startRight = right.getFirst();
-
-        a0 = Math.atan2(
-                startRight.y() - startCenter.y(),
-                startRight.x() - startCenter.x()
-        );
-
-        for (int step = 1; step <= steps; step++) {
-            double angle = a0 - Math.PI * step / steps;
-
-            outline.add(new Point(
-                    startCenter.x()
-                            + radii.getFirst() * Math.cos(angle),
-                    startCenter.y()
-                            + radii.getFirst() * Math.sin(angle)
-            ));
-        }
-
-        return chaikinSmooth(outline);
-    }
-
-    static List<Point> chaikinSmooth(List<Point> points) {
-        int m = points.size();
-
-        if (m < 3) {
-            return points;
-        }
-
-        List<Point> out = new ArrayList<>();
-
-        for (int i = 0; i < m; i++) {
-            Point p0 = points.get(i);
-            Point p1 = points.get((i + 1) % m);
-
-            out.add(new Point(
-                    0.75 * p0.x() + 0.25 * p1.x(),
-                    0.75 * p0.y() + 0.25 * p1.y()
-            ));
-
-            out.add(new Point(
-                    0.25 * p0.x() + 0.75 * p1.x(),
-                    0.25 * p0.y() + 0.75 * p1.y()
-            ));
-        }
-
-        return out;
-    }
-
-    static List<String> gridSvg(
-            Map<String, Object> spec,
-            double width,
-            double height
-    ) {
-        String color = colorHex(List.of(GRID_COLOR.r(), GRID_COLOR.g(), GRID_COLOR.b()));
-        List<String> elements = new ArrayList<>();
-
-        String kind = (String) spec.get("type");
-        double spacing = ((Number) spec.get("spacing")).doubleValue();
-        double x0 = ((Number) spec.getOrDefault("x0", 0)).doubleValue();
-        double y0 = ((Number) spec.getOrDefault("y0", 0)).doubleValue();
-
-        if (kind.equals("hlines") || kind.equals("grid")) {
-            double y = y0;
-
-            while (y < height) {
-                elements.add(
-                        "<line x1=\"0\" y1=\"" +
-                                fmt(y) +
-                                "\" x2=\"" +
-                                fmt(width) +
-                                "\" y2=\"" +
-                                fmt(y) +
-                                "\" stroke=\"" +
-                                color +
-                                "\" stroke-width=\"" +
-                                fmt(GRID_LINE_WIDTH) +
-                                "\"/>"
-                );
-
-                y += spacing;
-            }
-        }
-
-        if (kind.equals("grid")) {
-            double x = x0;
-
-            while (x < width) {
-                elements.add(
-                        "<line x1=\"" +
-                                fmt(x) +
-                                "\" y1=\"0\" x2=\"" +
-                                fmt(x) +
-                                "\" y2=\"" +
-                                fmt(height) +
-                                "\" stroke=\"" +
-                                color +
-                                "\" stroke-width=\"" +
-                                fmt(GRID_LINE_WIDTH) +
-                                "\"/>"
-                );
-
-                x += spacing;
-            }
-        } else if (kind.equals("dots")) {
-            double y = y0;
-
-            while (y < height) {
-                double x = x0;
-
-                while (x < width) {
-                    elements.add(
-                            "<circle cx=\"" +
-                                    fmt(x) +
-                                    "\" cy=\"" +
-                                    fmt(y) +
-                                    "\" r=\"" +
-                                    fmt(DOT_RADIUS) +
-                                    "\" fill=\"" +
-                                    color +
-                                    "\"/>"
-                    );
-
-                    x += spacing;
-                }
-
-                y += spacing;
-            }
-        }
-
-        return elements;
-    }
-
-    static String escapeHtml(String value) {
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
-    }
-
-    static String buildSvg(List<Stroke> strokes, double width, double height) {
-        List<String> paths = new ArrayList<>();
-
-        // Draw highlighters first so opaque strokes appear on top.
-        List<Stroke> ordered = strokes.stream()
-                .sorted(Comparator.comparingInt(
-                        stroke -> isHighlighter(stroke) ? 0 : 1
-                ))
-                .toList();
-
-        for (Stroke stroke : ordered) {
-            List<Point> outline = strokeOutline(stroke);
-
-            if (outline.isEmpty()) {
-                continue;
-            }
-
-            StringBuilder d = new StringBuilder();
-
-            d.append("M ")
-                    .append(fmt(outline.get(0).x()))
-                    .append(" ")
-                    .append(fmt(outline.get(0).y()));
-
-            for (Point point : outline.subList(1, outline.size())) {
-                d.append(" L ")
-                        .append(fmt(point.x()))
-                        .append(" ")
-                        .append(fmt(point.y()));
-            }
-
-            d.append(" Z");
-
-            paths.add(
-                    "<path d=\"" + d +
-                            "\" fill=\"" + colorHex(List.of(stroke.color().r(), stroke.color().g(), stroke.color().b())) +
-                            "\" fill-opacity=\"" + fmt(stroke.opacity()) +
-                            "\"/>"
-            );
-        }
-
-        return String.join("\n", List.of(
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" " +
-                        "version=\"1.1\" " +
-                        "viewBox=\"0 0 " +
-                        fmt(width) + " " +
-                        fmt(height) + "\">",
-
-                // White background only.
-                "<rect width=\"" + fmt(width) +
-                        "\" height=\"" + fmt(height) +
-                        "\" fill=\"white\"/>",
-
-                // Strokes only.
-                String.join("\n", paths),
-
-                "</svg>"
-        ));
     }
 
     static void exportArchive(File archiveFile, String outDir) throws IOException {
@@ -575,82 +208,12 @@ public class Main {
             }
         }
 
-        if (pageData.pageNumber() == 3) {
-            for (Stroke stroke : strokes) {
-                System.out.println("Processing stroke for page 3: " + stroke + "\n");
-            }
-        }
-
         return new Page(
                 "page-" + pageData.pageNumber(),
                 width.floatValue(),
                 height.floatValue(),
                 strokes
         );
-    }
-
-    static Stroke.ColorValue getStrokeColor(int value) {
-        if (value == 0 || value == 0xFFFFFFFF) {
-            return new Stroke.ColorValue(0, 0, 0);
-        }
-
-        int r = (value >> 16) & 0xFF;
-        int g = (value >> 8) & 0xFF;
-        int b = value & 0xFF;
-
-        return new Stroke.ColorValue(r, g, b);
-    }
-
-    static StrokeStyle getStrokeStyle(byte[] data, int styleOffset, long colorValue, long penType, float softness) {
-        if (colorValue != 0 && colorValue != 0xFFFFFFFFL) {
-            return new StrokeStyle(getStrokeColor((int) colorValue), 1.0f);
-        }
-
-        float c1 = ExtractionHelper.readFloat(data, styleOffset + 20);
-        float c2 = ExtractionHelper.readFloat(data, styleOffset + 24);
-        float c3 = ExtractionHelper.readFloat(data, styleOffset + 28);
-
-        boolean allValid = Float.isFinite(c1) && c1 >= 0 && c1 <= 1
-                && Float.isFinite(c2) && c2 >= 0 && c2 <= 1
-                && Float.isFinite(c3) && c3 >= 0 && c3 <= 1;
-
-        boolean anyNonZero = (c1 != 0 || c2 != 0 || c3 != 0);
-
-        if (allValid && anyNonZero) {
-            long flag = ExtractionHelper.readUint(data, styleOffset + 4);
-            boolean isNew = (flag == 0x01000000L || flag == 0x01010000L);
-
-            // bgr and rgb for new and old
-            float rComp, gComp, bComp;
-            if (penType == 5 || !isNew) {
-                rComp = c3; // BGR
-                gComp = c2;
-                bComp = c1;
-            } else {
-                rComp = c1; // RGB
-                gComp = c2;
-                bComp = c3;
-            }
-
-            Stroke.ColorValue rgb = new Stroke.ColorValue(
-                    Math.round(rComp * 255),
-                    Math.round(gComp * 255),
-                    Math.round(bComp * 255)
-            );
-
-            boolean isSoftnessValid = Float.isFinite(softness) && softness > 0 && softness <= 1;
-
-            if (penType == 5) {
-                return new StrokeStyle(rgb, isSoftnessValid ? softness : 0.35f);
-            }
-            if (penType == 3 && isSoftnessValid) {
-                return new StrokeStyle(rgb, softness);
-            }
-
-            return new StrokeStyle(rgb, 1.0f);
-        }
-
-        return new StrokeStyle(new Stroke.ColorValue(0, 0, 0), 1.0f);
     }
 
     static List<Stroke> parsePencilEngine(byte[] data) {
@@ -672,7 +235,7 @@ public class Main {
             }
             if (pointsEnd > data.length) continue;
 
-            List<Stroke.Point> points = new ArrayList<>();
+            List<Point> points = new ArrayList<>();
             List<Float> pressures = new ArrayList<>();
 
             for (int i = 0; i < count; i++) {
@@ -686,7 +249,7 @@ public class Main {
                     break;
                 }
 
-                points.add(new Stroke.Point(x, y));
+                points.add(new Point(x, y));
                 pressures.add((Float.isFinite(pressure) && pressure > 0) ? pressure : 0.0f);
             }
 
@@ -696,7 +259,7 @@ public class Main {
             float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE;
             float minY = Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
 
-            for (Stroke.Point p : points) {
+            for (Point p : points) {
                 if (p.x() < minX) minX = p.x();
                 if (p.x() > maxX) maxX = p.x();
                 if (p.y() < minY) minY = p.y();
@@ -738,21 +301,6 @@ public class Main {
         }
 
         return strokes;
-    }
-
-    record Point(double x, double y) {
-    }
-
-    record PointPressure(Stroke.Point point, double pressure) {
-    }
-
-    record TextLine(
-            String text,
-            int r,
-            int g,
-            int b,
-            double fontSize
-    ) {
     }
 
     record JhinoteRoot(JhinoteRootContent customNoteContent) {
