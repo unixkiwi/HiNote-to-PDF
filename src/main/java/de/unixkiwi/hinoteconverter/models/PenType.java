@@ -1,13 +1,17 @@
 package de.unixkiwi.hinoteconverter.models;
 
 public enum PenType {
-    PEN(1),
-    PENCIL(2),
-    BRUSH(3),
+    BRUSH(13),
+    PEN(2),
+    FELT_TIP(12),
+    FOUNTAIN(1),
+    PENCIL_HB(3),
+    PENCIL_2B(11),
+    MARKER(4),
     HIGHLIGHTER(5),
     OTHER(-1);
 
-    private int value;
+    public final int value;
 
     PenType(int value) {
         this.value = value;

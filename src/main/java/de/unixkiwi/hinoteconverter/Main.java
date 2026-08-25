@@ -3,10 +3,12 @@ package de.unixkiwi.hinoteconverter;
 import de.unixkiwi.hinoteconverter.models.*;
 import de.unixkiwi.hinoteconverter.models.Point;
 import de.unixkiwi.hinoteconverter.models.Stroke;
+import org.jfree.graphics2d.svg.SVGGraphics2D;
 import tools.jackson.databind.ObjectMapper;
 
 import java.awt.*;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -107,7 +109,16 @@ public class Main {
                 System.out.println("Built page: " + page.getName() + " with strokes: " + page.getStrokes().size() + "\n");
 
                 if (!page.getStrokes().isEmpty() /*|| !page.getImages().isEmpty() || gridSpec(page.getBackgroundTemplate())*/) {
-                    String title = archiveFile.getName() + ": " + page.getName();
+                    String title = archiveFile.getName().replace(" ", "_") + "-" + page.getName();
+
+                    Renderer r = new Renderer(page);
+
+                    SVGGraphics2D svgG2d = new SVGGraphics2D((int) page.getWidth(), (int) page.getHeight());
+                    r.buildGraphic().render(svgG2d);
+                    String xmlContent = svgG2d.getSVGElement();
+                    try (FileWriter writer = new FileWriter(outDir + File.separatorChar + title + ".svg")) {
+                        writer.write(xmlContent);
+                    }
 
                     pages.add(page);
                 }
@@ -214,7 +225,7 @@ public class Main {
                 float finalSoftness = isSoftnessValid ? softness : 0.35f;
                 return new StrokeStyle(color, finalSoftness);
             }
-            if (penType == PenType.BRUSH && isSoftnessValid) {
+            if (penType == PenType.PENCIL_HB && isSoftnessValid) {
                 return new StrokeStyle(color, softness);
             }
             return new StrokeStyle(color, 1.0f);
@@ -225,7 +236,7 @@ public class Main {
 
     static List<Stroke> parsePencilEngine(byte[] data) {
         if (!isPencilEngine(data)) return new ArrayList<>();
-
+        //Set<Integer> penTypes = new HashSet<>();
         List<Stroke> strokes = new ArrayList<>();
 
         for (int offset = 60; offset < data.length - 16; offset += 4) {
@@ -298,6 +309,8 @@ public class Main {
 
             PenType penType = PenType.fromValue((int) ExtractionHelper.readUint(data, styleOffest + 12));
             if (penType == PenType.OTHER) continue;
+//            if (penTypes.add((int) ExtractionHelper.readUint(data, styleOffest + 12)))
+//                System.out.println("Pen Type: " + ExtractionHelper.readUint(data, styleOffest + 12));
 
             float softness = ExtractionHelper.readFloat(data, styleOffest + 32);
             long colorValue = ExtractionHelper.readUint(data, styleOffest + 8);
