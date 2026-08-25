@@ -10,6 +10,16 @@ public enum PageOrientation {
         this.value = value;
     }
 
+    public static PageOrientation fromValue(int value) {
+        for (PageOrientation orientation : PageOrientation.values()) {
+            if (orientation.value == value) {
+                return orientation;
+            }
+        }
+        throw new IllegalArgumentException("Unknown page orientation value: " + value);
+
+    }
+
     public int getValue() {
         return value;
     }

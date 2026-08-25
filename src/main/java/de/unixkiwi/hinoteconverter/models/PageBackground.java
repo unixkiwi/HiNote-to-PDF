@@ -37,6 +37,15 @@ public enum PageBackground {
         this.spacing = spacing;
     }
 
+    public static PageBackground fromValue(String value) {
+        for (PageBackground background : PageBackground.values()) {
+            if (background.value.equals(value)) {
+                return background;
+            }
+        }
+        throw new IllegalArgumentException("Unknown page background value: " + value);
+    }
+
     public String getValue() {
         return value;
     }

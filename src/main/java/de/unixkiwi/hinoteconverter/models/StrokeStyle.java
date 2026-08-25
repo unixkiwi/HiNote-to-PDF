@@ -1,4 +1,6 @@
 package de.unixkiwi.hinoteconverter.models;
 
-public record StrokeStyle(Stroke.ColorValue color, float opacity) {
+import java.awt.*;
+
+public record StrokeStyle(Color color, float opacity) {
 }

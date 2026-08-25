@@ -1,15 +1,17 @@
 package de.unixkiwi.hinoteconverter;
 
 import de.unixkiwi.hinoteconverter.models.*;
+import de.unixkiwi.hinoteconverter.models.Point;
+import de.unixkiwi.hinoteconverter.models.Stroke;
 import tools.jackson.databind.ObjectMapper;
 
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
+import java.util.List;
 import java.util.zip.ZipFile;
 
 public class Main {
@@ -28,39 +30,6 @@ public class Main {
         } catch (Exception e) {
             System.err.println("Error while exporting archive: " + e.getMessage());
         }
-
-/*
-        try {
-            System.out.println("Extracting: " + inputFiles + " to " + tmpDir);
-            List<File> extractedFiles = ExtractionHelper.unzip(inputFiles, tmpDir);
-            if (extractedFiles.isEmpty()) {
-                System.err.println("No files extracted.");
-                return;
-            }
-
-            List<File> jhinoteFiles = extractedFiles.stream().filter(file -> file.exists() && file.isFile() && file.getName().endsWith(".jhinote")).toList();
-
-            List<File> rootJhinoteFiles = jhinoteFiles.stream().filter(file -> file.getParent().equals(tmpDir)).toList();
-            if (rootJhinoteFiles.size() != 2) {
-                System.err.println("Expected 2 jhinote files, but found " + rootJhinoteFiles.size());
-                return;
-            }
-
-            for (File f : jhinoteFiles) {
-                String targetDir = f.getPath().replace("jhinote", "json");
-                System.out.println("Extracting: " + f.getPath() + " to " + targetDir);
-                ExtractionHelper.gunzip(f.getPath(), targetDir);
-                if (!f.delete()) {
-                    System.err.println("Could not delete: " + f.getPath());
-                }
-            }
-
-            RootNote rootNote = MAPPER.readValue(new File(rootJhinoteFiles.stream().filter(file -> !file.getPath().contains("custom")).findFirst().orElseThrow().getPath().replace("jhinote", "json")), RootNote.class);
-
-        } catch (IOException e) {
-            System.err.println("Something went wrong: ");
-            e.printStackTrace();
-        }*/
     }
 
     public static boolean isPenkitBlock(byte[] data) {
@@ -94,7 +63,6 @@ public class Main {
                 // extract zip file
                 try (InputStream inputStream = zipFile.getInputStream(entry)) {
                     byte[] bytes = inputStream.readAllBytes();
-                    System.out.println("Adding " + entry.getName() + " with content " + bytes);
                     files.put(entry.getName(), bytes);
                 } catch (IOException e) {
                     System.err.println("Error while reading entry: " + entry.getName());
@@ -136,21 +104,11 @@ public class Main {
             for (JhinotePage.JhinotePageCustomPageContent data : pageData) {
                 Page page = buildPage(data, files, backgroundMap);
 
-                System.out.println("Built page: " + page.name() + " with strokes: " + page.strokes().size() + "\n");
+                System.out.println("Built page: " + page.getName() + " with strokes: " + page.getStrokes().size() + "\n");
 
-                if (!page.strokes().isEmpty() /*|| !page.images().isEmpty() || gridSpec(page.getBackgroundTemplate())*/) {
-                    try {
-                        String title = archiveFile.getName() + ": " + page.name();
-                        Path svgFile = Path.of(outDir).resolve(page.name() + ".svg");
+                if (!page.getStrokes().isEmpty() /*|| !page.getImages().isEmpty() || gridSpec(page.getBackgroundTemplate())*/) {
+                    String title = archiveFile.getName() + ": " + page.getName();
 
-                        System.out.println("Writing file to: " + svgFile.toAbsolutePath());
-
-                        String svgContent = buildSvg(page.strokes(), page.width(), page.height());
-                        Files.writeString(svgFile, svgContent, StandardCharsets.UTF_8);
-                    } catch (IOException e) {
-                        System.err.println("Error while writing SVG file: " + page.name());
-                        System.err.println(e.getMessage());
-                    }
                     pages.add(page);
                 }
             }
@@ -163,10 +121,9 @@ public class Main {
     static Page buildPage(JhinotePage.JhinotePageCustomPageContent pageData, Map<String, byte[]> files, Map<String, String> backgroundMap) {
         Double ratio = pageData.pageRatio();
         if (ratio == null) ratio = 0.706;
-        System.out.println("Page ratio: " + ratio);
 
-        Double width = 1000D;
-        Double height;
+        double width = 1000D;
+        double height;
         if (pageData.pageOrientation() == 1) {
             height = 1000.0 * ratio;
         } else {
@@ -183,7 +140,6 @@ public class Main {
             byte[] backgroundData = files.get(backgroundName);
 
             if (backgroundData != null && backgroundData.length > 0) {
-                System.out.println("Processing background data for attachment: " + backgroundName);
                 // process background data such as image or pdf here
             }
 
@@ -194,13 +150,8 @@ public class Main {
         for (JhinotePage.JhinotePageCustomPageContent.Attachment attachment : pageData.attachment()) {
             String result = "files/" + attachment.filePath().substring(attachment.filePath().lastIndexOf("/") + 1);
 
-            System.out.println("Processing attachment: " + result);
-
 
             byte[] data = files.get(result);
-            System.out.println(files.values().toArray()[0]);
-            System.out.println("Retrieved this data for an attachment: " + data);
-
             if (data != null && data.length > 0 && isPencilEngine(data)) {
                 System.out.println("Parsing pencil engine data for attachment: " + result);
 
@@ -210,10 +161,66 @@ public class Main {
 
         return new Page(
                 "page-" + pageData.pageNumber(),
-                width.floatValue(),
-                height.floatValue(),
-                strokes
+                (float) width,
+                (float) height,
+                strokes,
+                PageOrientation.fromValue(pageData.pageOrientation()),
+                PageBackground.fromValue(pageData.background())
         );
+    }
+
+    static Color getStrokeColor(int value) {
+        if (value == 0 || value == 0xFFFFFFFF) return new Color(0, 0, 0);
+        return new Color((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
+    }
+
+    static StrokeStyle getStrokeStyle(byte[] data, long styleOffset, int colorValue, PenType penType, float softness) {
+        if (colorValue != 0 && colorValue != 0xFFFFFFFF) return new StrokeStyle(getStrokeColor(colorValue), 1.0f);
+
+        float c1 = ExtractionHelper.readFloat(data, (int) (styleOffset + 20));
+        float c2 = ExtractionHelper.readFloat(data, (int) (styleOffset + 24));
+        float c3 = ExtractionHelper.readFloat(data, (int) (styleOffset + 28));
+
+        boolean allValid = Float.isFinite(c1) && c1 >= 0 && c1 <= 1
+                && Float.isFinite(c2) && c2 >= 0 && c2 <= 1
+                && Float.isFinite(c3) && c3 >= 0 && c3 <= 1;
+
+        boolean anyNonZero = (c1 != 0 || c2 != 0 || c3 != 0);
+
+        if (allValid && anyNonZero) {
+            int flag = Math.toIntExact(ExtractionHelper.readUint(data, (int) styleOffset + 4));
+            boolean isNew = (flag == 0x01000000 || flag == 0x01010000);
+
+            float r, g, b;
+            if (penType == PenType.HIGHLIGHTER || !isNew) {
+                r = c3;
+                g = c2;
+                b = c1;
+            } else {
+                r = c1;
+                g = c2;
+                b = c3;
+            }
+
+            Color color = new Color(
+                    Math.round(r * 255),
+                    Math.round(g * 255),
+                    Math.round(b * 255)
+            );
+
+            boolean isSoftnessValid = Float.isFinite(softness) && softness > 0 && softness <= 1;
+
+            if (penType == PenType.HIGHLIGHTER) {
+                float finalSoftness = isSoftnessValid ? softness : 0.35f;
+                return new StrokeStyle(color, finalSoftness);
+            }
+            if (penType == PenType.BRUSH && isSoftnessValid) {
+                return new StrokeStyle(color, softness);
+            }
+            return new StrokeStyle(color, 1.0f);
+        }
+
+        return new StrokeStyle(new Color(0, 0, 0), 1.0f);
     }
 
     static List<Stroke> parsePencilEngine(byte[] data) {
@@ -289,13 +296,13 @@ public class Main {
             float baseWidth = ExtractionHelper.readFloat(data, styleOffest + 40);
             if (!Float.isFinite(baseWidth) || baseWidth <= 0 || baseWidth > 100) baseWidth = 4.0f;
 
-            long penType = ExtractionHelper.readUint(data, styleOffest + 12);
-            if (!(penType == 1 || penType == 2 || penType == 3 || penType == 5)) continue;
+            PenType penType = PenType.fromValue((int) ExtractionHelper.readUint(data, styleOffest + 12));
+            if (penType == PenType.OTHER) continue;
 
             float softness = ExtractionHelper.readFloat(data, styleOffest + 32);
             long colorValue = ExtractionHelper.readUint(data, styleOffest + 8);
 
-            StrokeStyle strokeStyle = getStrokeStyle(data, styleOffest, colorValue, penType, softness);
+            StrokeStyle strokeStyle = getStrokeStyle(data, styleOffest, (int) colorValue, penType, softness);
 
             strokes.add(new Stroke(points, pressures, baseWidth, strokeStyle.color(), strokeStyle.opacity(), penType));
         }

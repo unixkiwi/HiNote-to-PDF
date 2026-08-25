@@ -30,4 +30,32 @@ public class Page {
         this.background = background;
         this.bgAttachmentId = bgAttachmentId;
     }
+
+    public String getName() {
+        return name;
+    }
+
+    public float getWidth() {
+        return width;
+    }
+
+    public float getHeight() {
+        return height;
+    }
+
+    public List<Stroke> getStrokes() {
+        return strokes;
+    }
+
+    public PageOrientation getOrientation() {
+        return orientation;
+    }
+
+    public PageBackground getBackground() {
+        return background;
+    }
+
+    public String getBgAttachmentId() {
+        return bgAttachmentId;
+    }
 }
